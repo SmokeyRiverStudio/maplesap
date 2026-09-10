@@ -13,16 +13,18 @@ GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v24.0")
 REPO = "SmokeyRiverStudio/maplesap"
 
 CAPTIONS = {
-    1: "Management found 3 safety violations. Night shift found 7 and created 2 more. How many can you find? Drop your number below. Answers next shift.\n\n#CasualMisconduct #MiningHumor #WorkplaceHumor",
-    2: "Toolbox talk. Wrong answers only. Finish the supervisor’s sentence.\n\n#CasualMisconduct #ToolboxTalk #WorkplaceHumor",
-    3: "Finish the supervisor’s sentence. Wrong answers only—and HR has already been warned.\n\n#CasualMisconduct #ShopHumor #WorkplaceHumor",
-    4: "Make HR regret opening Facebook. Describe your workplace without naming it.\n\n#CasualMisconduct #HRNotApproved #WorkplaceHumor",
-    5: "“This will only take five minutes.” The biggest lie ever told in a shop.\n\n#CasualMisconduct #ShopHumor #Trades",
-    6: "The rookie didn’t fuck it up. Management calls it hands-on training.\n\n#CasualMisconduct #RookieMistakes #WorkplaceHumor",
-    7: "Management said, “Just weld the fucker.” Engineering has left the chat.\n\n#CasualMisconduct #WeldingHumor #Engineering",
-    8: "Today’s safety meeting is sponsored by nicotine, caffeine, and denial.\n\n#CasualMisconduct #SafetyThird #BlueCollarHumor",
-    9: "Management had an idea. Everyone else updated their résumés.\n\n#CasualMisconduct #ManagementLogic #WorkplaceHumor",
+    1: "Disappointed expectations, delivered fresh.",
+    2: "Two brain cells. Neither one is supervising.",
+    3: "Some days the third chin gets a vote.",
+    4: "A rare moment of silence. Enjoy it while it lasts.",
+    5: "The bar was on the ground and somehow we still tripped over it.",
+    6: "Not just wrong. Fascinatingly wrong.",
+    7: "Adult supervision has left the building.",
+    8: "Should have come with a warning label.",
+    9: "Not a mistake. A whole personality choice.",
 }
+
+ALLOWED_DESTINATIONS = {"facebook", "instagram"}
 
 def graph(method, path, token, **kwargs):
     url = f"https://graph.facebook.com/{GRAPH_VERSION}/{path.lstrip('/')}"
@@ -144,6 +146,16 @@ def publish_instagram_reel(page, video_url, caption):
 
 def main():
     seed = int(os.environ["SEED_NUMBER"])
+    destinations = {
+        item.strip().lower()
+        for item in os.environ.get("DESTINATIONS", "facebook").split(",")
+        if item.strip()
+    }
+    unknown_destinations = destinations - ALLOWED_DESTINATIONS
+    if unknown_destinations:
+        raise RuntimeError(f"Unknown destination(s): {sorted(unknown_destinations)}")
+    if not destinations:
+        raise RuntimeError("DESTINATIONS must include at least one destination")
     user_token = os.environ.get("FB_ACCESS_TOKEN", "").strip()
     if not user_token:
         raise RuntimeError("FB_ACCESS_TOKEN is not configured")
@@ -162,12 +174,12 @@ def main():
     page = resolve_page(user_token)
     caption = CAPTIONS[seed]
     errors = {}
-    if not state.get("facebook"):
+    if "facebook" in destinations and not state.get("facebook"):
         try:
             state["facebook"] = publish_facebook_reel(page, video_path, caption)
         except Exception as exc:
             errors["facebook"] = str(exc)
-    if not state.get("instagram"):
+    if "instagram" in destinations and not state.get("instagram"):
         try:
             facebook_video_id = (state.get("facebook") or {}).get("video_id")
             if not facebook_video_id:
