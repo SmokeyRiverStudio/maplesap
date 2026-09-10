@@ -1,0 +1,169 @@
+name: Publish Casual Misconduct Stars Batch
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-casual-misconduct-stars-batch.yml"
+      - "facebook-assets/casual-misconduct-stars/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-casual-misconduct-stars-batch
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
+      GRAPH_VERSION: v21.0
+
+    steps:
+      - name: Check out approved assets
+        uses: actions/checkout@v4
+
+      - name: Publish approved Stars batch
+        shell: node {0}
+        run: |
+          const fs = require("fs");
+
+          const GRAPH_VERSION = process.env.GRAPH_VERSION || "v21.0";
+          const GRAPH = "https://graph.facebook.com/" + GRAPH_VERSION;
+          const PAGE_NAME = "Casual Misconduct";
+          const ASSET_BASE = "https://raw.githubusercontent.com/SmokeyRiverStudio/maplesap/" + process.env.GITHUB_SHA + "/facebook-assets/casual-misconduct-stars/";
+          const userToken = process.env.FB_ACCESS_TOKEN;
+
+          const posts = [
+            {
+              slot: 1,
+              asset: "safety-first-coffee-first.png",
+              caption: "Safety first. Coffee firster.\n\nSome days the whole personality is held together by caffeine and stubbornness."
+            },
+            {
+              slot: 2,
+              asset: "daily-shitstorm-survivors-club.png",
+              caption: "Daily Shitstorm Survivors Club check-in.\n\nRoll call: who made it through today with only moderate emotional damage?"
+            },
+            {
+              slot: 3,
+              asset: "give_yourself_fucking_grace.png",
+              caption: "Tiny reminder from the chaos desk: give yourself some grace.\n\nEven if today was held together with tape, caffeine, and questionable language."
+            },
+            {
+              slot: 4,
+              asset: "dont_fucking_quit.png",
+              caption: "Don't quit.\n\nTake a breather. Swear a little. Drink some water. Then go be a problem for whatever tried to stop you."
+            },
+            {
+              slot: 5,
+              asset: "you_can_fucking_do_this.png",
+              caption: "For anyone currently negotiating with their last nerve: you can do this.\n\nMaybe not gracefully. But definitely with style."
+            }
+          ];
+
+          async function json(url, options = {}) {
+            const response = await fetch(url, options);
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok || body.error) {
+              const graphError = body.error || {};
+              throw new Error([
+                graphError.message || ("HTTP " + response.status),
+                graphError.code != null ? "code=" + graphError.code : "",
+                graphError.error_subcode != null ? "subcode=" + graphError.error_subcode : "",
+                graphError.type ? "type=" + graphError.type : "",
+                graphError.fbtrace_id ? "trace=" + graphError.fbtrace_id : ""
+              ].filter(Boolean).join("; "));
+            }
+            return body;
+          }
+
+          function graphUrl(endpoint, token, query = {}) {
+            const url = new URL(GRAPH + "/" + endpoint.replace(/^\//, ""));
+            Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, String(value)));
+            url.searchParams.set("access_token", token);
+            return url;
+          }
+
+          async function allPages(url) {
+            const rows = [];
+            let next = url;
+            while (next) {
+              const body = await json(next);
+              rows.push(...(body.data || []));
+              next = body.paging && body.paging.next;
+            }
+            return rows;
+          }
+
+          async function main() {
+            if (!userToken) throw new Error("FB_ACCESS_TOKEN is not configured");
+            for (const post of posts) {
+              if (!fs.existsSync("facebook-assets/casual-misconduct-stars/" + post.asset)) {
+                throw new Error("Approved asset is missing: " + post.asset);
+              }
+            }
+
+            const accounts = await json(graphUrl("me/accounts", userToken, {fields: "id,name,access_token,tasks", limit: 100}));
+            const matches = (accounts.data || []).filter(page => page.name === PAGE_NAME);
+            if (matches.length !== 1) throw new Error("Expected exactly one accessible Casual Misconduct Page; found " + matches.length);
+            const page = matches[0];
+            if (!page.access_token) throw new Error("Meta did not return a Casual Misconduct Page token");
+            if (Array.isArray(page.tasks) && page.tasks.length && !page.tasks.includes("CREATE_CONTENT")) {
+              throw new Error("Casual Misconduct Page token lacks CREATE_CONTENT task");
+            }
+
+            const pageToken = page.access_token;
+            const identity = await json(graphUrl(page.id, pageToken, {fields: "id,name"}));
+            if (identity.id !== page.id || identity.name !== PAGE_NAME) throw new Error("Page identity mismatch");
+
+            const since = Math.floor((Date.now() - 21 * 86400000) / 1000);
+            const recent = await allPages(graphUrl(page.id + "/posts", pageToken, {fields: "id,message,permalink_url,created_time", since, limit: 100}));
+            const existingMessages = new Map();
+            for (const post of recent) {
+              if (post.message) existingMessages.set(post.message.trim(), post);
+            }
+
+            const records = [];
+            for (const item of posts) {
+              const existing = existingMessages.get(item.caption.trim());
+              if (existing) {
+                records.push({...item, status: "already-present", metaPostId: existing.id, permalink: existing.permalink_url || null});
+                console.log("Already present " + item.slot + "/5: " + existing.id);
+                continue;
+              }
+
+              const form = new FormData();
+              form.set("url", ASSET_BASE + encodeURIComponent(item.asset));
+              form.set("caption", item.caption);
+              form.set("published", "true");
+              form.set("access_token", pageToken);
+
+              const result = await json(GRAPH + "/" + page.id + "/photos", {method: "POST", body: form});
+              const postId = result.post_id || result.id;
+              if (!postId) throw new Error("Meta returned no post ID for " + item.asset);
+
+              records.push({...item, status: "published", metaPostId: postId, permalink: null});
+              existingMessages.set(item.caption.trim(), {id: postId});
+              console.log("Published " + item.slot + "/5: " + postId);
+            }
+
+            const summary = process.env.GITHUB_STEP_SUMMARY;
+            fs.appendFileSync(summary, "# Casual Misconduct Stars batch\n\n");
+            fs.appendFileSync(summary, "Page: **" + identity.name + "** (" + identity.id + ")\n\n");
+            fs.appendFileSync(summary, "| # | Asset | Status | Meta ID |\n|---:|---|---|---|\n");
+            for (const record of records) {
+              fs.appendFileSync(summary, "| " + record.slot + " | " + record.asset + " | " + record.status + " | " + record.metaPostId + " |\n");
+            }
+
+            console.log(JSON.stringify({page: identity, records}, null, 2));
+          }
+
+          main().catch(error => {
+            console.error(error);
+            process.exitCode = 1;
+          });
