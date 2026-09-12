@@ -1,5 +1,5 @@
 {
-  "daily_engagements": 3,
+  "daily_engagements": 0,
   "daily_reach": null,
   "fans": 621,
   "followers": 621,
@@ -9,7 +9,7 @@
   },
   "page_name": "Casual Misconduct",
   "published_post_count": 25,
-  "refreshed_at": "2026-09-11T15:02:11.144406Z",
+  "refreshed_at": "2026-09-12T14:07:39.160316Z",
   "schema_version": 1,
   "source": "Meta Graph API"
 }
