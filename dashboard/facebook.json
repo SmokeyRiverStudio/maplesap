@@ -1,15 +1,15 @@
 {
-  "daily_engagements": 1,
+  "daily_engagements": 0,
   "daily_reach": null,
-  "fans": 621,
-  "followers": 621,
+  "fans": 622,
+  "followers": 622,
   "graph_version": "v21.0",
   "metric_errors": {
     "daily_reach": "Meta API error 100: (#100) The value must be a valid insights metric"
   },
   "page_name": "Casual Misconduct",
   "published_post_count": 25,
-  "refreshed_at": "2026-09-13T14:54:52.651312Z",
+  "refreshed_at": "2026-09-14T16:57:34.885346Z",
   "schema_version": 1,
   "source": "Meta Graph API"
 }
